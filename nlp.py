@@ -3,7 +3,10 @@ from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 import re
 import string
-
+import nltk
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
 candidates = [
     {"id": 1, "name": "Alice Martin", "skills": ["python", "sql", "machine learning", "data visualization", "statistics"], "experience": 5, "bio": "Data scientist passionnée par l'IA et l'analyse de données pour résoudre des problèmes business"},
@@ -35,7 +38,7 @@ jobs = [
 ]
 
 
-#Nettoie et normalise un texte via tokenisation, stopwords et lemmatisation.
+#Nettoie et normalise un texte via tokenisation, stopwords et steammatisation
 def preprocess_text(text):
     stemmer=nltk.stem.SnowballStemmer('french') 
 
@@ -49,10 +52,41 @@ def preprocess_text(text):
     return tokens
 
 
-for candidate in candidates:
-    candidate["bio_processed"] = preprocess_text(candidate["bio"])
-    print(f"Bio de {candidate['name']} après traitement:", candidate["bio_processed"])
+def get_job_recommendations(candidate_id, top_n=2):
+    candidate = next(c for c in candidates if c['id'] == candidate_id)
 
-for job in jobs:
-    job["description_processed"] = preprocess_text(job["description"])
-    print(f"Description du poste '{job['title']}' après traitement:", job["description_processed"])
+    # Associe les compétences et la biographie en pondérant les compétences avec un facteur de 3.
+    candidate_texts = ' '.join(preprocess_text((' '.join(candidate['skills']) * 3) + ' ' + candidate['bio']))
+
+    # Filtrer les jobs selon l'expérience requise
+    eligible_jobs = [job for job in jobs if job['min_experience'] <= candidate['experience']]
+    if not eligible_jobs:
+        return []
+
+    job_texts = [
+        ' '.join(preprocess_text((' '.join(job['required_skills']) * 3) + ' ' + job['description']))
+        for job in eligible_jobs
+    ]
+
+    # Vectorisation et calcul de la similarité
+    vectorizer = TfidfVectorizer()
+    vectors = vectorizer.fit_transform([candidate_texts] + job_texts)
+    similarity_matrix = cosine_similarity(vectors[0:1], vectors[1:]).flatten()
+
+    # Trier les indices des jobs du plus similaire au moins similaire
+    sorted_indices = np.argsort(similarity_matrix)[::-1]
+    top_job_indices = sorted_indices[:top_n]
+
+    # Sélectionner les jobs correspondants et leurs scores de similarité
+    recommended_jobs = [(eligible_jobs[i], similarity_matrix[i]) for i in top_job_indices]
+
+    # Affichage des recommandations sous la forme demandée
+    print(f"Recommandation pour {candidate['name']} (ID {candidate['id']}):")
+    for job, score in recommended_jobs:
+        print(f"{job['title']} (ID {job['id']}) - Score: {score:.2f}")
+    return recommended_jobs
+
+if __name__ == "__main__":
+    recommended_jobs = get_job_recommendations(candidate_id=1, top_n=2)
+
+    recommended_jobs = get_job_recommendations(candidate_id=3, top_n=2)
